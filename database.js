@@ -53,69 +53,51 @@ const testConnection = async () => {
     }
 };
 
-// Initialize database (safe for Render)
 const initializeDatabase = async () => {
     try {
-        console.log('🔍 Verifying database tables...');
+        console.log('🔍 Creating or verifying database tables...');
 
-        await query('SELECT 1 FROM waitlist_users LIMIT 1');
-        await query('SELECT 1 FROM waitlist_analytics LIMIT 1');
+        // Create users table
+        await query(`
+            CREATE TABLE IF NOT EXISTS waitlist_users (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                email VARCHAR(255) UNIQUE NOT NULL,
+                phone VARCHAR(50) NOT NULL,
+                gender VARCHAR(50),
+                age VARCHAR(50),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                ip_address VARCHAR(50),
+                user_agent TEXT,
+                referral_code VARCHAR(50)
+            );
+        `);
 
-        console.log('✅ Database tables verified');
+        // Create indexes
+        await query(`CREATE INDEX IF NOT EXISTS idx_waitlist_email ON waitlist_users(email);`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_waitlist_created_at ON waitlist_users(created_at);`);
+
+        // Create analytics table
+        await query(`
+            CREATE TABLE IF NOT EXISTS waitlist_analytics (
+                id SERIAL PRIMARY KEY,
+                total_signups INT DEFAULT 0,
+                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+
+        // Ensure analytics row exists
+        const result = await query('SELECT COUNT(*) FROM waitlist_analytics');
+        if (parseInt(result.rows[0].count) === 0) {
+            await query('INSERT INTO waitlist_analytics (total_signups) VALUES (0)');
+        }
+
+        console.log('✅ Database initialized successfully');
         return true;
 
     } catch (error) {
-        console.log('⚠️ Tables missing. Creating...');
-
-        try {
-            await query(`
-                CREATE TABLE IF NOT EXISTS waitlist_users (
-                    id SERIAL PRIMARY KEY,
-                    name VARCHAR(100) NOT NULL,
-                    email VARCHAR(255) UNIQUE NOT NULL,
-                    phone VARCHAR(50) NOT NULL,
-                    gender VARCHAR(50),
-                    age VARCHAR(50),
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    ip_address VARCHAR(50),
-                    user_agent TEXT,
-                    referral_code VARCHAR(50)
-                );
-            `);
-
-            await query(`
-                CREATE INDEX IF NOT EXISTS idx_waitlist_email 
-                ON waitlist_users(email);
-            `);
-
-            await query(`
-                CREATE INDEX IF NOT EXISTS idx_waitlist_created_at 
-                ON waitlist_users(created_at);
-            `);
-
-            await query(`
-                CREATE TABLE IF NOT EXISTS waitlist_analytics (
-                    id SERIAL PRIMARY KEY,
-                    total_signups INT DEFAULT 0,
-                    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                );
-            `);
-
-            // Ensure analytics row exists
-            const result = await query('SELECT COUNT(*) FROM waitlist_analytics');
-            if (parseInt(result.rows[0].count) === 0) {
-                await query(
-                    'INSERT INTO waitlist_analytics (total_signups) VALUES (0)'
-                );
-            }
-
-            console.log('✅ Database initialized successfully');
-            return true;
-
-        } catch (createError) {
-            console.error('❌ Failed to initialize database:', createError.message);
-            return false;
-        }
+        console.error('❌ Failed to initialize database:', error.message || error);
+        process.exit(1); // Stop the app if database cannot be prepared
     }
 };
 
