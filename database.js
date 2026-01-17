@@ -5,7 +5,7 @@ if (process.env.NODE_ENV !== 'production') {
     require('dotenv').config();
 }
 
-// Determine connection string
+// Get DATABASE_URL (Render provides this automatically)
 const connectionString = process.env.DATABASE_URL;
 
 // Safety check
@@ -28,24 +28,14 @@ const pool = new Pool({
 // Generic query helper
 const query = (text, params) => pool.query(text, params);
 
-// Test database connection
+// ✅ CONNECTION TEST — NO TABLE QUERIES
 const testConnection = async () => {
     try {
         const client = await pool.connect();
-        console.log('✅ PostgreSQL connected successfully');
-
-        const result = await client.query(`
-            SELECT 
-                (SELECT COUNT(*) FROM waitlist_users) AS user_count,
-                (SELECT COUNT(*) FROM waitlist_analytics) AS analytics_count
-        `);
-
-        console.log('📊 Database stats:', {
-            users: result.rows[0].user_count,
-            analytics: result.rows[0].analytics_count
-        });
-
+        await client.query('SELECT 1'); // 🔑 ONLY test connectivity
         client.release();
+
+        console.log('✅ PostgreSQL connected successfully');
         return true;
     } catch (error) {
         console.error('❌ PostgreSQL connection failed:', error.message);
@@ -53,11 +43,12 @@ const testConnection = async () => {
     }
 };
 
+// ✅ SAFE INITIALIZATION — CREATES TABLES IF MISSING
 const initializeDatabase = async () => {
     try {
         console.log('🔍 Creating or verifying database tables...');
 
-        // Create users table
+        // Users table
         await query(`
             CREATE TABLE IF NOT EXISTS waitlist_users (
                 id SERIAL PRIMARY KEY,
@@ -73,11 +64,18 @@ const initializeDatabase = async () => {
             );
         `);
 
-        // Create indexes
-        await query(`CREATE INDEX IF NOT EXISTS idx_waitlist_email ON waitlist_users(email);`);
-        await query(`CREATE INDEX IF NOT EXISTS idx_waitlist_created_at ON waitlist_users(created_at);`);
+        // Indexes
+        await query(`
+            CREATE INDEX IF NOT EXISTS idx_waitlist_email
+            ON waitlist_users(email);
+        `);
 
-        // Create analytics table
+        await query(`
+            CREATE INDEX IF NOT EXISTS idx_waitlist_created_at
+            ON waitlist_users(created_at);
+        `);
+
+        // Analytics table
         await query(`
             CREATE TABLE IF NOT EXISTS waitlist_analytics (
                 id SERIAL PRIMARY KEY,
@@ -89,7 +87,9 @@ const initializeDatabase = async () => {
         // Ensure analytics row exists
         const result = await query('SELECT COUNT(*) FROM waitlist_analytics');
         if (parseInt(result.rows[0].count) === 0) {
-            await query('INSERT INTO waitlist_analytics (total_signups) VALUES (0)');
+            await query(
+                'INSERT INTO waitlist_analytics (total_signups) VALUES (0)'
+            );
         }
 
         console.log('✅ Database initialized successfully');
@@ -97,7 +97,7 @@ const initializeDatabase = async () => {
 
     } catch (error) {
         console.error('❌ Failed to initialize database:', error.message || error);
-        process.exit(1); // Stop the app if database cannot be prepared
+        process.exit(1); // Fail fast — this is correct for production
     }
 };
 
